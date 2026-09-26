@@ -7,11 +7,13 @@ cd "$(dirname "$0")" || exit 1
 echo "=================================================================="
 echo "  🎬 GENERATING 70 VIDEOS (SEQUENTIAL ROUND-ROBIN)"
 echo "  Hardware Threads: 20 Parallel Workers (EPYC 9454P)"
-echo "  Output Directory: /home/kayan/Desktop/IGVIDGEN/Output"
+echo "  Output Directory: /home/kayan/Desktop/IGREELOUT"
 echo "=================================================================="
+
+mkdir -p /home/kayan/Desktop/IGREELOUT
 
 node generate.js \
   --count 70 \
   --concurrency 20 \
   --duration 15 \
-  --outdir ./Output
+  --outdir /home/kayan/Desktop/IGREELOUT

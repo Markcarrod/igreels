@@ -32,7 +32,9 @@ const defaultCovers = [
   "/home/kayan/Desktop/IGVIDGEN/Assets/COVER.png"
 ];
 const DEFAULT_COVER = defaultCovers.find(p => fs.existsSync(p)) || path.join(__dirname, 'COVER.png');
-const DEFAULT_OUTDIR = path.resolve(__dirname, 'Output');
+const DEFAULT_OUTDIR = process.platform === 'linux'
+  ? '/home/kayan/Desktop/IGREELOUT'
+  : (fs.existsSync('C:/Users/kayan/Desktop') ? 'C:/Users/kayan/Desktop/IGREELOUT' : path.resolve(__dirname, 'Output'));
 
 function getImageDataUrl(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return '';

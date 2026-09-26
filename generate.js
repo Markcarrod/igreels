@@ -178,6 +178,22 @@ export function loadMusicCsv(csvFile = getDefaultCsvPath(), coversDir = getDefau
   return rows;
 }
 
+export function getArtistFolderName(artist) {
+  if (!artist) return 'Artist';
+  let clean = artist.trim().replace(/[\\/:*?"<>|]/g, '').trim();
+  clean = clean.replace(/\.+$/, '').trim();
+  return clean || 'Artist';
+}
+
+export function generateRandomString(len = 8) {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let str = '';
+  for (let i = 0; i < len; i++) {
+    str += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return str;
+}
+
 export function getCoverBaseName(coverPath) {
   if (coverPath) {
     const parsed = path.parse(coverPath).name;
@@ -186,13 +202,25 @@ export function getCoverBaseName(coverPath) {
   return 'video';
 }
 
-export function getDefaultOutputPath(outDir, coverPath) {
-  const baseName = getCoverBaseName(coverPath);
+export function getDefaultOutputPath(outDir, artist) {
+  const artistFolder = getArtistFolderName(artist);
+  const targetDir = path.join(outDir, artistFolder);
+  fs.mkdirSync(targetDir, { recursive: true });
+
   let idx = 1;
-  while (fs.existsSync(path.join(outDir, `${baseName}_${idx}.mp4`))) {
-    idx++;
+  const files = fs.existsSync(targetDir) ? fs.readdirSync(targetDir) : [];
+  const existingIndices = files
+    .map(f => {
+      const m = f.match(/_(\d+)\.mp4$/i);
+      return m ? parseInt(m[1], 10) : 0;
+    })
+    .filter(n => n > 0);
+  if (existingIndices.length > 0) {
+    idx = Math.max(...existingIndices) + 1;
   }
-  return path.join(outDir, `${baseName}_${idx}.mp4`);
+
+  const randStr = generateRandomString(8);
+  return path.join(targetDir, `${randStr}_${idx}.mp4`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -260,8 +288,10 @@ function parseArgs() {
   const durationArg = get('--duration');
   const templateArg = (get('--template') || 'spotify').toLowerCase();
   const bgArg       = get('--bg') || get('--color');
-  const outputArg   = get('--output');
-  const outDirArg   = get('--outdir') || get('--output-dir') || path.join(__dirname, 'Output');
+  const defaultOutDir = process.platform === 'linux'
+    ? '/home/kayan/Desktop/IGREELOUT'
+    : (fs.existsSync('C:/Users/kayan/Desktop') ? 'C:/Users/kayan/Desktop/IGREELOUT' : path.join(__dirname, 'Output'));
+  const outDirArg   = get('--outdir') || get('--output-dir') || defaultOutDir;
   const countArg    = parseInt(get('--count') || get('--batch') || '1', 10);
   const concurrencyArg = parseInt(get('--concurrency') || get('--workers') || get('--threads') || '1', 10);
   const isSequential = !args.includes('--random-templates');
@@ -319,7 +349,7 @@ function parseArgs() {
     background,
     outDir,
     jsonProgress,
-    outputPath:   outputArg ? path.resolve(outputArg) : getDefaultOutputPath(outDir, coverArg),
+    outputPath:   outputArg ? path.resolve(outputArg) : getDefaultOutputPath(outDir, artistArg),
   };
 }
 
@@ -432,7 +462,7 @@ async function renderBatch(cfg) {
   `);
   fs.mkdirSync(cfg.outDir, { recursive: true });
 
-  const coverCounterMap = {};
+  const artistCounterMap = {};
   const tasks = [];
   for (let i = 0; i < cfg.count; i++) {
     const tpl = cfg.sequential
@@ -445,24 +475,31 @@ async function renderBatch(cfg) {
     const songDuration = songItem ? songItem.songDuration : cfg.songDuration;
     const coverPath = (songItem && songItem.coverPath) ? songItem.coverPath : cfg.coverPath;
 
-    const coverName = getCoverBaseName(coverPath);
-    if (!coverCounterMap[coverName]) {
-      let startIdx = 1;
-      while (fs.existsSync(path.join(cfg.outDir, `${coverName}_${startIdx}.mp4`))) {
-        startIdx++;
-      }
-      coverCounterMap[coverName] = startIdx;
-    } else {
-      coverCounterMap[coverName]++;
+    const artistFolder = getArtistFolderName(artist);
+    const targetDir = path.join(cfg.outDir, artistFolder);
+    fs.mkdirSync(targetDir, { recursive: true });
+
+    if (artistCounterMap[artistFolder] === undefined) {
+      const existing = fs.existsSync(targetDir) ? fs.readdirSync(targetDir) : [];
+      const nums = existing
+        .map(f => {
+          const m = f.match(/_(\d+)\.mp4$/i);
+          return m ? parseInt(m[1], 10) : 0;
+        })
+        .filter(n => n > 0);
+      artistCounterMap[artistFolder] = nums.length > 0 ? Math.max(...nums) : 0;
     }
-    const itemNum = coverCounterMap[coverName];
+
+    artistCounterMap[artistFolder]++;
+    const itemNum = artistCounterMap[artistFolder];
+    const randStr = generateRandomString(8);
 
     const clipDuration = cfg.clipDuration || 15;
     const maxOffset = Math.max(0, songDuration - clipDuration);
     const stepCount = hasCsvSongs ? cfg.csvSongs.length : cfg.count;
     const startOffset = maxOffset > 0 ? Math.floor(((i % stepCount) * maxOffset) / Math.max(1, stepCount - 1)) : 0;
     
-    const outputPath = path.join(cfg.outDir, `${coverName}_${itemNum}.mp4`);
+    const outputPath = path.join(targetDir, `${randStr}_${itemNum}.mp4`);
 
     tasks.push({
       index: i + 1,
