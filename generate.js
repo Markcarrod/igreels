@@ -224,6 +224,35 @@ export function getDefaultOutputPath(outDir, artist) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Duration Range Parser (e.g. "7-11", "7..11", "15", or default random 7-11s)
+// ─────────────────────────────────────────────────────────────────────────────
+export function parseDurationRange(durationArg, defaultMin = 7, defaultMax = 11) {
+  if (!durationArg) {
+    return { min: defaultMin, max: defaultMax, isRandom: true };
+  }
+  const s = String(durationArg).trim().toLowerCase();
+  if (s === 'random') {
+    return { min: defaultMin, max: defaultMax, isRandom: true };
+  }
+  const rangeMatch = s.match(/^(\d+)\s*(?:-|–|\.\.|to|:)\s*(\d+)(?:s|sec|secs)?$/i);
+  if (rangeMatch) {
+    const d1 = parseInt(rangeMatch[1], 10);
+    const d2 = parseInt(rangeMatch[2], 10);
+    return {
+      min: Math.min(d1, d2),
+      max: Math.max(d1, d2),
+      isRandom: true
+    };
+  }
+  const singleMatch = s.match(/^(\d+)(?:s|sec|secs)?$/i);
+  if (singleMatch) {
+    const single = parseInt(singleMatch[1], 10);
+    return { min: single, max: single, isRandom: false };
+  }
+  return { min: defaultMin, max: defaultMax, isRandom: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  CLI Parser
 // ─────────────────────────────────────────────────────────────────────────────
 function parseArgs() {
@@ -286,6 +315,7 @@ function parseArgs() {
   if (!coverArg) coverArg = foundDefault;
 
   const durationArg = get('--duration');
+  const durationCfg = parseDurationRange(durationArg, 7, 11);
   const templateArg = (get('--template') || 'spotify').toLowerCase();
   const bgArg       = get('--bg') || get('--color');
   const outputArg   = get('--output') || get('--out');
@@ -305,7 +335,9 @@ function parseArgs() {
   }
 
   const songDuration = parseDuration(songArg);
-  const clipDuration = durationArg ? Math.min(parseInt(durationArg, 10), songDuration) : 15;
+  const clipDuration = durationCfg.isRandom
+    ? Math.min(songDuration, randomBetween(durationCfg.min, durationCfg.max))
+    : Math.min(songDuration, durationCfg.min);
   const startOffset  = randomBetween(0, Math.max(0, songDuration - clipDuration));
   const outDir       = path.resolve(outDirArg);
   fs.mkdirSync(outDir, { recursive: true });
@@ -340,6 +372,9 @@ function parseArgs() {
       title: titleArg,
       songDuration,
       clipDuration,
+      durationMin: durationCfg.min,
+      durationMax: durationCfg.max,
+      isRandomDuration: durationCfg.isRandom,
       template,
       background,
       outDir,
@@ -465,10 +500,15 @@ async function renderBatch(cfg) {
   const totalExpected = (cfg.perArtist > 0 && hasCsvSongs) ? (cfg.csvSongs.length * cfg.perArtist) : cfg.count;
   const concurrency = Math.max(1, Math.min(cfg.concurrency || 1, totalExpected));
 
+  const durationLabel = cfg.isRandomDuration
+    ? `Randomized ${cfg.durationMin}s - ${cfg.durationMax}s per video`
+    : `${cfg.durationMin || cfg.clipDuration || 10}s`;
+
   console.log(`
   +=====================================================================+
   |  BATCH GENERATION: ${totalExpected} Videos (${cfg.sequential ? 'Sequential Round-Robin' : 'Random'})
   |  Target: ${cfg.perArtist > 0 ? `${cfg.perArtist} videos per artist across ${cfg.csvSongs.length} artists` : `${cfg.count} videos total`}
+  |  Clip Duration: ${durationLabel}
   |  Concurrency: ${concurrency} parallel worker threads
   |  Output Directory: ${cfg.outDir}
   |  Music Source: ${hasCsvSongs ? `CSV Catalog (${cfg.csvSongs.length} songs)` : `Single Track ("${cfg.title}" by ${cfg.artist})`}
@@ -517,7 +557,9 @@ async function renderBatch(cfg) {
         const itemNum = artistCounterMap[artistFolder];
         const randStr = generateRandomString(8);
 
-        const clipDuration = cfg.clipDuration || 15;
+        const clipDuration = cfg.isRandomDuration
+          ? randomBetween(cfg.durationMin || 7, Math.min(cfg.durationMax || 11, songDuration))
+          : Math.min(cfg.durationMin || cfg.clipDuration || 10, songDuration);
         const maxOffset = Math.max(0, songDuration - clipDuration);
         const startOffset = maxOffset > 0 ? Math.floor((k * maxOffset) / Math.max(1, videosPerSong - 1)) : 0;
 
@@ -568,7 +610,9 @@ async function renderBatch(cfg) {
       const itemNum = artistCounterMap[artistFolder];
       const randStr = generateRandomString(8);
 
-      const clipDuration = cfg.clipDuration || 15;
+      const clipDuration = cfg.isRandomDuration
+        ? randomBetween(cfg.durationMin || 7, Math.min(cfg.durationMax || 11, songDuration))
+        : Math.min(cfg.durationMin || cfg.clipDuration || 10, songDuration);
       const maxOffset = Math.max(0, songDuration - clipDuration);
       const startOffset = maxOffset > 0 ? Math.floor((i * maxOffset) / Math.max(1, cfg.count - 1)) : 0;
 
